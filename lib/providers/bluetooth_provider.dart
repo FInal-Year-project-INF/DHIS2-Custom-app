@@ -40,8 +40,8 @@ class BluetoothDeviceWrapper {
 
   set name(String newName) => _cachedName = newName.isNotEmpty ? newName : _cachedName;
   bool get isESP32Thermo => name.toLowerCase().contains('esp32') || name.toLowerCase().contains('thermo');
-  bool get isConnectable => _isConnectable;
-  set isConnectable(bool value) => _isConnectable = value;
+  bool get isConnectableLocal => isConnectable;
+  set isConnectablel(bool value) => isConnectable = value;
 
   @override
   String toString() => 'Device: $name (${device.remoteId.str}), RSSI: $rssi';
