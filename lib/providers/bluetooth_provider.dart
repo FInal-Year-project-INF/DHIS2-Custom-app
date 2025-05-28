@@ -7,7 +7,6 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../constants/app_constants.dart';
 
-// Simple wrapper for Bluetooth device
 class BluetoothDeviceWrapper {
   final BluetoothDevice device;
   int rssi;
@@ -30,33 +29,18 @@ class BluetoothDeviceWrapper {
     if (_cachedName != null && _cachedName!.isNotEmpty) {
       return _cachedName!;
     }
-
     if (device.platformName.isNotEmpty) {
       _cachedName = device.platformName;
       return device.platformName;
     }
-
     final shortId = device.remoteId.str.substring(
       max(0, device.remoteId.str.length - 5),
     );
     return 'Device $shortId';
   }
 
-  set name(String newName) {
-    if (newName.isNotEmpty) {
-      _cachedName = newName;
-    }
-  }
-
-  bool get isESP32Thermo {
-    if (name.toLowerCase().contains('esp32') ||
-        name.toLowerCase().contains('thermo')) {
-      return true;
-    }
-
-    return false;
-  }
-
+  set name(String newName) => _cachedName = newName.isNotEmpty ? newName : _cachedName;
+  bool get isESP32Thermo => name.toLowerCase().contains('esp32') || name.toLowerCase().contains('thermo');
   bool get isConnectable => _isConnectable;
   set isConnectable(bool value) => _isConnectable = value;
 
@@ -67,6 +51,7 @@ class BluetoothDeviceWrapper {
 class BluetoothProvider with ChangeNotifier {
   BluetoothDeviceWrapper? selectedDevice;
   StreamSubscription? _connectionSubscription;
+  StreamSubscription? _characteristicSubscription;
   bool isConnected = false;
   String temperatureValue = "No reading";
   bool _isReading = false;
@@ -75,8 +60,8 @@ class BluetoothProvider with ChangeNotifier {
 
   static const String esp32DeviceName = BluetoothConstants.deviceName;
   static const String temperatureServiceUuid = BluetoothConstants.serviceUuid;
-  static const String temperatureCharacteristicUuid =
-      BluetoothConstants.characteristicUuid;
+  static const String temperatureCharacteristicUuid = BluetoothConstants.characteristicUuid;
+  
   bool _isProcessingBluetoothAction = false;
   String _bluetoothActionStatus = "";
   Timer? _stateResetTimer;
@@ -86,57 +71,46 @@ class BluetoothProvider with ChangeNotifier {
   String get bluetoothActionStatus => _bluetoothActionStatus;
   bool get isConnecting => _isConnecting;
 
+  // State management
   void resetConnectionState() {
-    if (kDebugMode) {
-      print("Resetting Bluetooth connection state flags");
-    }
+    if (kDebugMode) print("Resetting Bluetooth connection state flags");
     _isProcessingBluetoothAction = false;
     _bluetoothActionStatus = "";
     _isConnecting = false;
     _stateResetTimer?.cancel();
     _stateResetTimer = null;
-
-    Future.microtask(() => notifyListeners());
+    notifyListeners();
   }
 
   void _safeUpdateState(Function() updateFunction) {
     updateFunction();
-
     _updateTimer?.cancel();
-    _updateTimer = Timer(Duration.zero, () {
-      notifyListeners();
-    });
+    _updateTimer = Timer(Duration.zero, notifyListeners);
   }
 
+  // Bluetooth operations
   Future<bool> isBluetoothEnabled() async {
     try {
-      BluetoothAdapterState adapterState =
-          await FlutterBluePlus.adapterState.first;
-      return adapterState == BluetoothAdapterState.on;
+      return await FlutterBluePlus.adapterState.first == BluetoothAdapterState.on;
     } catch (e) {
-      if (kDebugMode) {
-        print("Error checking Bluetooth state: $e");
-      }
+      if (kDebugMode) print("Error checking Bluetooth state: $e");
       return false;
     }
   }
 
   Future<bool> requestPermissions() async {
-    Map<Permission, PermissionStatus> statuses =
-        await [
-          Permission.bluetooth,
-          Permission.bluetoothScan,
-          Permission.bluetoothConnect,
-          Permission.location,
-        ].request();
-
+    final statuses = await [
+      Permission.bluetooth,
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.location,
+    ].request();
+    
     bool allGranted = true;
     statuses.forEach((permission, status) {
       if (!status.isGranted) {
         allGranted = false;
-        if (kDebugMode) {
-          print("$permission not granted. Status: $status");
-        }
+        if (kDebugMode) print("$permission not granted. Status: $status");
       }
     });
     return allGranted;
@@ -150,19 +124,16 @@ class BluetoothProvider with ChangeNotifier {
     });
 
     try {
-      bool isEnabled = await isBluetoothEnabled();
-      if (!isEnabled) {
+      if (!await isBluetoothEnabled()) {
         _safeUpdateState(() {
-          _bluetoothActionStatus =
-              "Bluetooth is turned off. Please turn it on.";
+          _bluetoothActionStatus = "Bluetooth is turned off. Please turn it on.";
           _isProcessingBluetoothAction = false;
           _isConnecting = false;
         });
         return false;
       }
 
-      bool permissionsGranted = await requestPermissions();
-      if (!permissionsGranted) {
+      if (!await requestPermissions()) {
         _safeUpdateState(() {
           _bluetoothActionStatus = "Bluetooth permissions not granted.";
           _isProcessingBluetoothAction = false;
@@ -171,106 +142,61 @@ class BluetoothProvider with ChangeNotifier {
         return false;
       }
 
-      if (FlutterBluePlus.isScanningNow) {
-        await FlutterBluePlus.stopScan();
-      }
+      if (FlutterBluePlus.isScanningNow) await FlutterBluePlus.stopScan();
 
-      _safeUpdateState(() {
-        _bluetoothActionStatus = "Scanning for ESP32-Thermo device...";
-      });
+      _safeUpdateState(() => _bluetoothActionStatus = "Scanning for ESP32-Thermo device...");
 
-      bool deviceFound = false;
-      BluetoothDeviceWrapper? targetDevice;
-      Completer<bool> deviceFoundCompleter = Completer<bool>();
+      final completer = Completer<bool>();
+      final timeoutTimer = Timer(const Duration(seconds: 30), () => completer.complete(false));
+      
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 15), androidUsesFineLocation: false);
 
-      Timer timeoutTimer = Timer(const Duration(seconds: 30), () {
-        if (!deviceFoundCompleter.isCompleted) {
-          deviceFoundCompleter.complete(false);
+      final scanSubscription = FlutterBluePlus.scanResults.listen((results) {
+        for (var result in results) {
+          final deviceName = result.device.platformName.toLowerCase();
+          if (deviceName.contains(esp32DeviceName.toLowerCase()) || 
+              (deviceName.contains('esp32') && deviceName.contains('thermo'))) {
+            
+            if (kDebugMode) print("Found ESP32-Thermo: ${result.device.platformName}");
+            
+            FlutterBluePlus.stopScan();
+            completer.complete(true);
+            
+            selectedDevice = BluetoothDeviceWrapper(
+              device: result.device,
+              rssi: result.rssi,
+              name: result.device.platformName,
+            );
+            break;
+          }
         }
+      }, onError: (e) {
+        if (kDebugMode) print("Scan error: $e");
+        _safeUpdateState(() {
+          _bluetoothActionStatus = "Error during scan: $e";
+          _isProcessingBluetoothAction = false;
+          _isConnecting = false;
+        });
+        completer.complete(false);
       });
 
-      await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 15),
-        androidUsesFineLocation: false,
-      );
-
-      StreamSubscription<List<ScanResult>>? scanSubscription;
-      scanSubscription = FlutterBluePlus.scanResults.listen(
-        (results) {
-          for (var result in results) {
-            String deviceName = result.device.platformName.toLowerCase();
-
-            if (deviceName.contains(esp32DeviceName.toLowerCase()) ||
-                (deviceName.contains('esp32') &&
-                    deviceName.contains('thermo'))) {
-              if (kDebugMode) {
-                print(
-                  "Found ESP32-Thermo device: ${result.device.platformName}, ID: ${result.device.remoteId.str}",
-                );
-              }
-
-              targetDevice = BluetoothDeviceWrapper(
-                device: result.device,
-                rssi: result.rssi,
-                name: result.device.platformName,
-              );
-
-              deviceFound = true;
-              FlutterBluePlus.stopScan();
-
-              if (!deviceFoundCompleter.isCompleted) {
-                deviceFoundCompleter.complete(true);
-              }
-              break;
-            }
-          }
-        },
-        onError: (e) {
-          if (kDebugMode) {
-            print("Scan results stream error: $e");
-          }
-          _safeUpdateState(() {
-            _bluetoothActionStatus = "Error during scan: $e";
-            _isProcessingBluetoothAction = false;
-            _isConnecting = false;
-          });
-          if (!deviceFoundCompleter.isCompleted) {
-            deviceFoundCompleter.complete(false);
-          }
-        },
-        onDone: () {
-          scanSubscription?.cancel();
-
-          if (!deviceFoundCompleter.isCompleted && !deviceFound) {
-            deviceFoundCompleter.complete(false);
-          }
-        },
-      );
-
-      deviceFound = await deviceFoundCompleter.future;
+      final deviceFound = await completer.future;
       timeoutTimer.cancel();
       scanSubscription.cancel();
 
-      if (!deviceFound || targetDevice == null) {
+      if (!deviceFound || selectedDevice == null) {
         _safeUpdateState(() {
-          _bluetoothActionStatus =
-              "ESP32-Thermo device not found. Please make sure it's powered on and nearby.";
+          _bluetoothActionStatus = "ESP32-Thermo not found. Ensure it's powered on and nearby.";
           _isProcessingBluetoothAction = false;
           _isConnecting = false;
         });
         return false;
       }
 
-      selectedDevice = targetDevice;
-      _safeUpdateState(() {
-        _bluetoothActionStatus = "Connecting to ESP32-Thermo...";
-      });
-
+      _safeUpdateState(() => _bluetoothActionStatus = "Connecting to ESP32-Thermo...");
       return await connectToDevice(selectedDevice!);
     } catch (e) {
-      if (kDebugMode) {
-        print("Error finding/connecting to ESP32-Thermo: $e");
-      }
+      if (kDebugMode) print("Error finding/connecting to ESP32-Thermo: $e");
       _safeUpdateState(() {
         _bluetoothActionStatus = "Error: $e";
         _isProcessingBluetoothAction = false;
@@ -280,238 +206,285 @@ class BluetoothProvider with ChangeNotifier {
     }
   }
 
- Future<bool> connectToDevice(BluetoothDeviceWrapper device) async {
-  _safeUpdateState(() {
-    _isConnecting = true;
-    _isProcessingBluetoothAction = true;
-    _bluetoothActionStatus = "Connecting to ${device.name}...";
-  });
-
-  try {
-    // Start timeout timer
-    _stateResetTimer = Timer(const Duration(seconds: 30), () {
-      if (_isConnecting) {
-        if (kDebugMode) {
-          print("Connection attempt timed out after 30 seconds");
-        }
-        resetConnectionState();
-      }
+  Future<bool> connectToDevice(BluetoothDeviceWrapper device) async {
+    _safeUpdateState(() {
+      _isConnecting = true;
+      _isProcessingBluetoothAction = true;
+      _bluetoothActionStatus = "Connecting to ${device.name}...";
     });
 
-    // Disconnect if already connected
-    if (device.device.isConnected) {
-      await device.device.disconnect();
+    try {
+      _stateResetTimer = Timer(const Duration(seconds: 30), () {
+        if (_isConnecting) {
+          if (kDebugMode) print("Connection attempt timed out");
+          resetConnectionState();
+        }
+      });
+
+      if (device.device.isConnected) {
+        await device.device.disconnect();
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+
+      if (kDebugMode) print("Attempting to connect to ${device.name}");
+      await device.device.connect(autoConnect: false);
       await Future.delayed(const Duration(milliseconds: 500));
-    }
 
+_connectionSubscription = device.device.connectionState.listen((state) async {
+  if (state == BluetoothConnectionState.connected) {
     if (kDebugMode) {
-      print("Attempting to connect to ${device.name}");
+      print("[BLE] Connected to ${device.name}");
+      print("[BLE] Connection state: $state");
     }
-
-    // Connect to device
-    await device.device.connect(autoConnect: false);
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    // Listen for connection state changes
-    _connectionSubscription = device.device.connectionState.listen((state) async {
-      if (state == BluetoothConnectionState.connected) {
-        if (kDebugMode) {
-          print("Connected to ${device.name}");
-        }
-
-        // Discover services before reading characteristics
-        await device.device.discoverServices();
-
-        isConnected = true;
-        selectedDevice = device;
-
-        _safeUpdateState(() {
-          _bluetoothActionStatus = "Connected to ${device.name}";
-          _isConnecting = false;
-          _isProcessingBluetoothAction = false;
-        });
-
-        await _startTemperatureMonitoring();
-      } else if (state == BluetoothConnectionState.disconnected) {
-        if (kDebugMode) {
-          print("Disconnected from ${device.name}");
-        }
-
-        isConnected = false;
-        _safeUpdateState(() {
-          _bluetoothActionStatus = "Disconnected from ${device.name}";
-          _isProcessingBluetoothAction = false;
-          _isConnecting = false;
-        });
-      }
-    });
-
-    _stateResetTimer?.cancel();
-    _stateResetTimer = null;
-
-    return true;
-  } catch (e) {
-    if (kDebugMode) {
-      print("Error connecting to device: $e");
-    }
+    
+    await device.device.discoverServices();
+    isConnected = true;
+    selectedDevice = device;
 
     _safeUpdateState(() {
-      _bluetoothActionStatus = "Connection failed: $e";
+      _bluetoothActionStatus = "Connected to ${device.name}";
+      _isConnecting = false;
+      _isProcessingBluetoothAction = false;
+    });
+
+    await _startTemperatureMonitoring();
+  } else if (state == BluetoothConnectionState.disconnected) {
+    if (kDebugMode) {
+      print("[BLE] Disconnected from ${device.name}");
+      print("[BLE] Connection state: $state");
+    }
+    isConnected = false;
+    _safeUpdateState(() {
+      _bluetoothActionStatus = "Disconnected from ${device.name}";
       _isProcessingBluetoothAction = false;
       _isConnecting = false;
     });
+  }
+});
+      _stateResetTimer?.cancel();
+      _stateResetTimer = null;
+      return true;
+    } catch (e) {
+      if (kDebugMode) print("Error connecting to device: $e");
+      _safeUpdateState(() {
+        _bluetoothActionStatus = "Connection failed: $e";
+        _isProcessingBluetoothAction = false;
+        _isConnecting = false;
+      });
+      return false;
+    }
+  }
+Future<void> _startTemperatureMonitoring() async {
+  if (selectedDevice == null || !isConnected) {
+    if (kDebugMode) print("[BLE] ❌ Cannot start monitoring - no connected device");
+    return;
+  }
 
-    return false;
+  try {
+    if (kDebugMode) print("[BLE] 🔄 Starting temperature monitoring...");
+    _safeUpdateState(() => _isReading = true);
+    
+    // Cancel any existing subscription first
+    if (_characteristicSubscription != null) {
+      if (kDebugMode) print("[BLE] 🔄 Cancelling existing characteristic subscription");
+      await _characteristicSubscription?.cancel();
+      _characteristicSubscription = null;
+    }
+
+    if (kDebugMode) print("[BLE] 🔍 Discovering services...");
+    final services = await selectedDevice!.device.discoverServices();
+    if (kDebugMode) print("[BLE] ✅ Found ${services.length} services");
+
+    // Log all services and characteristics for debugging
+    if (kDebugMode) {
+      for (var service in services) {
+        print("[BLE] 🔧 Service UUID: ${service.uuid}");
+        for (var char in service.characteristics) {
+          print("[BLE]   🔹 Characteristic: ${char.uuid} (Properties: ${char.properties})");
+        }
+      }
+    }
+
+    BluetoothService? tempService;
+    try {
+      tempService = services.firstWhere(
+        (s) => s.uuid.toString().toLowerCase() == temperatureServiceUuid.toLowerCase(),
+      );
+      if (kDebugMode) print("[BLE] ✅ Found temperature service: ${tempService.uuid}");
+    } catch (e) {
+      if (kDebugMode) print("[BLE] ❌ Temperature service not found: $e");
+      throw Exception("Temperature service not found");
+    }
+
+    BluetoothCharacteristic? tempCharacteristic;
+    try {
+      tempCharacteristic = tempService.characteristics.firstWhere(
+        (c) => c.uuid.toString().toLowerCase() == temperatureCharacteristicUuid.toLowerCase(),
+      );
+      if (kDebugMode) {
+        print("[BLE] ✅ Found temperature characteristic: ${tempCharacteristic.uuid}");
+        print("[BLE] 🔹 Characteristic properties: ${tempCharacteristic.properties}");
+      }
+    } catch (e) {
+      if (kDebugMode) print("[BLE] ❌ Temperature characteristic not found: $e");
+      throw Exception("Temperature characteristic not found");
+    }
+
+    // Verify characteristic supports notifications
+    if (!tempCharacteristic.properties.notify) {
+      if (kDebugMode) print("[BLE] ❌ Characteristic does not support notifications");
+      throw Exception("Characteristic does not support notifications");
+    }
+
+    // Create a completer to manage the monitoring session
+    final completer = Completer<void>();
+    int readingCount = 0;
+    const maxReadings = 10;
+
+    if (kDebugMode) print("[BLE] 🔔 Setting up notifications...");
+    await tempCharacteristic.setNotifyValue(true);
+    if (kDebugMode) print("[BLE] ✅ Notifications enabled successfully");
+    
+    _characteristicSubscription = tempCharacteristic.onValueReceived.listen(
+      (data) {
+        readingCount++;
+        if (kDebugMode) {
+          print("\n[BLE] 📡 Received data packet #$readingCount");
+          print("[BLE] 📦 Raw data bytes: ${data.join(', ')}");
+          print("[BLE] 📦 Data length: ${data.length} bytes");
+        }
+        
+        _processTemperatureData(data);
+        
+        if (readingCount >= maxReadings) {
+          if (!completer.isCompleted) {
+            if (kDebugMode) print("[BLE] 🔚 Reached max readings of $maxReadings");
+            completer.complete();
+          }
+        }
+      },
+      onError: (error) {
+        if (kDebugMode) print("[BLE] ❌ Notification error: $error");
+        if (!completer.isCompleted) {
+          completer.completeError(error);
+        }
+      },
+      onDone: () {
+        if (kDebugMode) print("[BLE] 🔚 Notification stream closed by remote device");
+      },
+      cancelOnError: true,
+    );
+
+    // Set timeout for safety
+    Future.delayed(const Duration(seconds: 30), () {
+      if (!completer.isCompleted) {
+        if (kDebugMode) print("[BLE] ⏰ Monitoring timeout reached (30s)");
+        completer.complete();
+      }
+    });
+
+    if (kDebugMode) print("[BLE] 👂 Listening for temperature readings...");
+    await completer.future;
+    if (kDebugMode) print("[BLE] ✅ Monitoring session completed");
+
+    // Clean up
+    if (kDebugMode) print("[BLE] 🧹 Cleaning up resources...");
+    await tempCharacteristic.setNotifyValue(false);
+    await _characteristicSubscription?.cancel();
+    _characteristicSubscription = null;
+    if (kDebugMode) print("[BLE] ✅ Resources cleaned up");
+
+    _safeUpdateState(() => _isReading = false);
+
+  } catch (e) {
+    if (kDebugMode) print("[BLE] ❌ Error in temperature monitoring: $e");
+    _safeUpdateState(() {
+      temperatureValue = "Error: ${e.toString()}";
+      _isReading = false;
+    });
+    
+    // Ensure resources are cleaned up even on error
+    await _characteristicSubscription?.cancel();
+    _characteristicSubscription = null;
+    if (kDebugMode) print("[BLE] 🧹 Cleaned up resources after error");
   }
 }
 
-
-  Future<void> _startTemperatureMonitoring() async {
-    if (selectedDevice == null || !isConnected) {
-      if (kDebugMode) {
-        print("Cannot start monitoring - no connected device");
-      }
-      return;
+void _processTemperatureData(List<int> data) {
+  try {
+    if (kDebugMode) print("[DATA] 🔄 Processing received data...");
+    
+    // First try UTF-8 decoding
+    String tempString;
+    try {
+      tempString = utf8.decode(data).trim();
+      if (kDebugMode) print("[DATA] 🔤 UTF-8 decoded: $tempString");
+    } catch (_) {
+      // Fallback to ASCII decoding if UTF-8 fails
+      tempString = String.fromCharCodes(data).trim();
+      if (kDebugMode) print("[DATA] 🔤 ASCII decoded: $tempString");
     }
 
-    try {
+    // Clean the string
+    tempString = tempString
+        .replaceAll('°C', '')
+        .replaceAll('°', '')
+        .replaceAll('C', '')
+        .trim();
+
+    if (kDebugMode) print("[DATA] ✨ Cleaned string: $tempString");
+
+    // Try to parse as double
+    final tempValue = double.tryParse(tempString);
+    
+    if (tempValue != null) {
+      if (kDebugMode) print("[DATA] ✅ Parsed temperature: $tempValue°C");
       _safeUpdateState(() {
+        temperatureValue = '${tempValue.toStringAsFixed(1)}°C';
         _isReading = true;
       });
-
-      if (kDebugMode) {
-        print("Discovering services for ${selectedDevice!.name}");
-      }
-
-      List<BluetoothService> services =
-          await selectedDevice!.device.discoverServices();
-
-      BluetoothService? tempService;
-      for (var service in services) {
-        if (service.uuid.toString() == temperatureServiceUuid) {
-          tempService = service;
-          break;
-        }
-      }
-
-      if (tempService == null) {
-        if (kDebugMode) {
-          print("Temperature service not found");
-        }
-        _safeUpdateState(() {
-          _isReading = false;
-          temperatureValue = "Service not found";
-        });
-        return;
-      }
-
-      BluetoothCharacteristic? tempCharacteristic;
-      for (var char in tempService.characteristics) {
-        if (char.uuid.toString() == temperatureCharacteristicUuid) {
-          tempCharacteristic = char;
-          break;
-        }
-      }
-
-      if (tempCharacteristic == null) {
-        if (kDebugMode) {
-          print("Temperature characteristic not found");
-        }
-        _safeUpdateState(() {
-          _isReading = false;
-          temperatureValue = "Characteristic not found";
-        });
-        return;
-      }
-
-      await tempCharacteristic.setNotifyValue(true);
-
-      tempCharacteristic.onValueReceived.listen(
-        (value) {
-          _processTemperatureData(value);
-        },
-        onError: (error) {
-          if (kDebugMode) {
-            print("Error receiving temperature data: $error");
-          }
-          _safeUpdateState(() {
-            temperatureValue = "Error reading data";
-            _isReading = false;
-          });
-        },
-      );
-
-      await tempCharacteristic.read();
-    } catch (e) {
-      if (kDebugMode) {
-        print("Error starting temperature monitoring: $e");
-      }
+    } else {
+      if (kDebugMode) print("[DATA] ❌ Failed to parse temperature from: $tempString");
       _safeUpdateState(() {
-        temperatureValue = "Error: $e";
+        temperatureValue = 'Raw: ${data.join(', ')}';
         _isReading = false;
       });
     }
+  } catch (e) {
+    if (kDebugMode) print("[DATA] ❌ Processing error: $e");
+    _safeUpdateState(() {
+      temperatureValue = "Invalid data";
+      _isReading = false;
+    });
   }
+}
 
-  void _processTemperatureData(List<int> data) {
-    try {
-      final tempString = utf8.decode(data);
+ 
 
-      if (kDebugMode) {
-        print("Received temperature data: $tempString");
-      }
-
-      _safeUpdateState(() {
-        temperatureValue = tempString;
-        _isReading = true;
-      });
-    } catch (e) {
-      if (data.isNotEmpty) {
-        try {
-          final tempValue = data.toString();
-          _safeUpdateState(() {
-            temperatureValue = tempValue;
-            _isReading = true;
-          });
-        } catch (e) {
-          if (kDebugMode) {
-            print("Error processing temperature data: $e");
-          }
-          _safeUpdateState(() {
-            temperatureValue = "Invalid data";
-            _isReading = false;
-          });
-        }
-      }
-    }
-  }
-
-  // Parse temp value
   double? getTemperatureAsDouble() {
     if (temperatureValue == "No reading" ||
-        temperatureValue == "Error reading data" ||
-        temperatureValue == "Service not found" ||
-        temperatureValue == "Characteristic not found" ||
-        temperatureValue == "Invalid data") {
+        temperatureValue.startsWith("Error") ||
+        temperatureValue.startsWith("Invalid") ||
+        temperatureValue.startsWith("Service") ||
+        temperatureValue.startsWith("Characteristic")) {
       return null;
     }
 
     try {
-      String sanitized = temperatureValue.replaceAll('°C', '').trim();
+      final sanitized = temperatureValue
+          .replaceAll('°C', '')
+          .replaceAll('°', '')
+          .replaceAll('C', '')
+          .trim();
       return double.parse(sanitized);
     } catch (e) {
-      if (kDebugMode) {
-        print("Error parsing temperature value: $e");
-      }
+      if (kDebugMode) print("Error parsing temperature value: $e");
       return null;
     }
   }
 
-  // Trigger temperature reading
   Future<void> startTemperatureReading() async {
-    if (!isConnected || selectedDevice == null) {
-      return;
-    }
+    if (!isConnected || selectedDevice == null) return;
 
     _safeUpdateState(() {
       _isReading = true;
@@ -521,9 +494,7 @@ class BluetoothProvider with ChangeNotifier {
     try {
       await _startTemperatureMonitoring();
     } catch (e) {
-      if (kDebugMode) {
-        print("Error starting temperature reading: $e");
-      }
+      if (kDebugMode) print("Error starting temperature reading: $e");
       _safeUpdateState(() {
         _isReading = false;
         temperatureValue = "Error reading temperature";
@@ -540,6 +511,8 @@ class BluetoothProvider with ChangeNotifier {
     try {
       _connectionSubscription?.cancel();
       _connectionSubscription = null;
+      _characteristicSubscription?.cancel();
+      _characteristicSubscription = null;
 
       if (selectedDevice != null && selectedDevice!.device.isConnected) {
         await selectedDevice!.device.disconnect();
@@ -553,9 +526,7 @@ class BluetoothProvider with ChangeNotifier {
         _isProcessingBluetoothAction = false;
       });
     } catch (e) {
-      if (kDebugMode) {
-        print("Error disconnecting: $e");
-      }
+      if (kDebugMode) print("Error disconnecting: $e");
       _safeUpdateState(() {
         _bluetoothActionStatus = "Error disconnecting: $e";
         _isProcessingBluetoothAction = false;
@@ -566,6 +537,7 @@ class BluetoothProvider with ChangeNotifier {
   @override
   void dispose() {
     _connectionSubscription?.cancel();
+    _characteristicSubscription?.cancel();
     _stateResetTimer?.cancel();
     _updateTimer?.cancel();
     super.dispose();
