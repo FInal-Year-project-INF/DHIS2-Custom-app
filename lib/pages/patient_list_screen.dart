@@ -1,3 +1,5 @@
+// ignore_for_file: library_private_types_in_public_api
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -6,7 +8,7 @@ import 'patient_details_screen.dart';
 import 'temperature_report_screen.dart';
 
 class PatientListScreen extends StatefulWidget {
-  const PatientListScreen({Key? key}) : super(key: key);
+  const PatientListScreen({super.key});
 
   @override
   _PatientListScreenState createState() => _PatientListScreenState();

@@ -10,9 +10,10 @@ import '../services/dhis2_service.dart';
 class EditPatientScreen extends StatefulWidget {
   final Map<String, dynamic> patientData;
 
-  const EditPatientScreen({Key? key, required this.patientData}) : super(key: key);
+  const EditPatientScreen({super.key, required this.patientData});
 
   @override
+  // ignore: library_private_types_in_public_api
   _EditPatientScreenState createState() => _EditPatientScreenState();
 }
 
@@ -23,7 +24,7 @@ class _EditPatientScreenState extends State<EditPatientScreen> {
   final _telephoneController = TextEditingController();
   final _addressController = TextEditingController();
   final _dhis2Service = DHIS2Service();
-  
+
   String _selectedGender = 'Male';
   bool _isUpdating = false;
   String _errorMessage = '';
@@ -38,17 +39,17 @@ class _EditPatientScreenState extends State<EditPatientScreen> {
 
   void _initializePatientData() {
     final attributes = widget.patientData['attributes'] as Map<String, String>;
-    
+
     _firstNameController.text = attributes['firstName'] ?? '';
     _lastNameController.text = attributes['lastName'] ?? '';
     _telephoneController.text = attributes['phone'] ?? '';
     _addressController.text = attributes['address'] ?? '';
     _selectedGender = attributes['gender'] ?? 'Male';
-    
+
     if (attributes['temperature'] != null && attributes['temperature']!.isNotEmpty) {
       _temperature = double.tryParse(attributes['temperature']!) ?? 0.0;
     }
-    
+
     // Create patient object for later use
     _patient = Patient.fromDhis2(widget.patientData);
   }
@@ -75,7 +76,7 @@ class _EditPatientScreenState extends State<EditPatientScreen> {
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final bluetoothProvider = Provider.of<BluetoothProvider>(context, listen: false);
-      
+
       // Use current temperature if connected to device
       double temperature = _temperature;
       if (bluetoothProvider.isConnected && bluetoothProvider.temperatureValue.isNotEmpty) {
@@ -128,9 +129,9 @@ class _EditPatientScreenState extends State<EditPatientScreen> {
       if (kDebugMode) {
         print('Error updating patient: $e');
       }
-      
+
       if (!mounted) return;
-      
+
       setState(() {
         _isUpdating = false;
         _errorMessage = 'Error updating patient: $e';
@@ -186,26 +187,26 @@ class _EditPatientScreenState extends State<EditPatientScreen> {
                         padding: const EdgeInsets.all(12),
                         margin: const EdgeInsets.only(bottom: 16),
                         decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.1),
+                          color: Colors.red.withAlpha((0.1 * 255).toInt()),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.red.withOpacity(0.3)),
+                          border: Border.all(color: Colors.red.withAlpha((0.3 * 255).toInt())), // FIXED HERE
                         ),
                         child: Text(
                           _errorMessage,
                           style: const TextStyle(color: Colors.red),
                         ),
                       ),
-                    
+
                     // Form fields
                     _buildFormSection(),
-                    
+
                     const SizedBox(height: 24),
-                    
+
                     // Update button
                     ElevatedButton(
                       onPressed: _updatePatient,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
+                        backgroundColor: AppColors.primary, // FIXED HERE
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(

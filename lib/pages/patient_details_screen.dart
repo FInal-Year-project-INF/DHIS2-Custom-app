@@ -6,16 +6,16 @@ import 'edit_patient_screen.dart';
 class PatientDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> patient;
 
-  const PatientDetailsScreen({Key? key, required this.patient})
-    : super(key: key);
+  const PatientDetailsScreen({super.key, required this.patient});
 
   @override
+  // ignore: library_private_types_in_public_api
   _PatientDetailsScreenState createState() => _PatientDetailsScreenState();
 }
 
 class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
   bool _isLoading = false;
-  String _errorMessage = '';
+  final String _errorMessage = '';
   Map<String, dynamic> _patientDetails = {};
 
   @override

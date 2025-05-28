@@ -10,9 +10,10 @@ import '../utils/color_utils.dart';
 import '../widgets/app_card.dart';
 
 class TemperatureReportScreen extends StatefulWidget {
-  const TemperatureReportScreen({Key? key}) : super(key: key);
+  const TemperatureReportScreen({super.key});
 
   @override
+  // ignore: library_private_types_in_public_api
   _TemperatureReportScreenState createState() =>
       _TemperatureReportScreenState();
 }
@@ -558,7 +559,7 @@ class _TemperatureReportScreenState extends State<TemperatureReportScreen> {
     final orgName = patient['orgUnitName'] ?? 'Unknown';
     final temperature = attributes['temperature'] ?? '';
     final phone = attributes['phone'] ?? '';
-    final address = attributes['address'] ?? '';
+    //final address = attributes['address'] ?? '';
 
     return AppCard(
       padding: AppDimensions.cardPadding,

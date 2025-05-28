@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import 'constants/app_constants.dart';
 import 'pages/login_screen.dart';
 import 'providers/auth_provider.dart';
@@ -44,17 +45,13 @@ class TempRecApp extends StatelessWidget {
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(
-                AppDimensions.buttonBorderRadius,
-              ),
+              borderRadius: BorderRadius.circular(AppDimensions.buttonBorderRadius),
             ),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(
-              AppDimensions.inputBorderRadius,
-            ),
+            borderRadius: BorderRadius.circular(AppDimensions.inputBorderRadius),
             borderSide: BorderSide.none,
           ),
           filled: true,

@@ -15,7 +15,7 @@ class AppButton extends StatelessWidget {
   final EdgeInsets? padding;
 
   const AppButton({
-    Key? key,
+    super.key,
     required this.text,
     required this.onPressed,
     this.type = AppButtonType.primary,
@@ -25,7 +25,7 @@ class AppButton extends StatelessWidget {
     this.width,
     this.height,
     this.padding,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -36,7 +36,7 @@ class AppButton extends StatelessWidget {
           return TextButton.styleFrom(
             backgroundColor: AppColors.primary,
             foregroundColor: Colors.white,
-            disabledBackgroundColor: AppColors.primary.withOpacity(0.5),
+            disabledBackgroundColor: AppColors.primary.withAlpha((0.5 * 255).toInt()),
             padding: padding ?? const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppDimensions.buttonBorderRadius),

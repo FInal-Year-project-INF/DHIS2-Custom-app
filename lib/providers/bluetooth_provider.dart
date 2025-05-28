@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../constants/app_constants.dart';
@@ -12,7 +11,7 @@ class BluetoothDeviceWrapper {
   final BluetoothDevice device;
   int rssi;
   String? _cachedName;
-  bool _isConnectable = true;
+  bool isConnectable = true;
 
   BluetoothDeviceWrapper({
     required this.device,
@@ -56,9 +55,6 @@ class BluetoothDeviceWrapper {
 
     return false;
   }
-
-  bool get isConnectable => _isConnectable;
-  set isConnectable(bool value) => _isConnectable = value;
 
   @override
   String toString() => 'Device: $name (${device.remoteId.str}), RSSI: $rssi';

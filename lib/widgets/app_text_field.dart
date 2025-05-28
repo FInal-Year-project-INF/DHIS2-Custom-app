@@ -18,7 +18,7 @@ class AppTextField extends StatelessWidget {
   final FocusNode? focusNode;
 
   const AppTextField({
-    Key? key,
+    super.key,
     required this.controller,
     required this.labelText,
     this.prefixIcon,
@@ -33,7 +33,7 @@ class AppTextField extends StatelessWidget {
     this.maxLines = 1,
     this.minLines,
     this.focusNode,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
