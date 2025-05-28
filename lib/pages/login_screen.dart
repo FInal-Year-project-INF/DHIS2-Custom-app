@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-//import '../services/dhis2_service.dart';
 import 'home_page.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -16,7 +15,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  //final _dhis2Service = DHIS2Service();
 
   bool _isLoading = false;
   bool _obscurePassword = true;
