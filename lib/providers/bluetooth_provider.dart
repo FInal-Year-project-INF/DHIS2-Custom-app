@@ -280,83 +280,91 @@ class BluetoothProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> connectToDevice(BluetoothDeviceWrapper device) async {
-    _safeUpdateState(() {
-      _isConnecting = true;
-      _isProcessingBluetoothAction = true;
-      _bluetoothActionStatus = "Connecting to ${device.name}...";
+ Future<bool> connectToDevice(BluetoothDeviceWrapper device) async {
+  _safeUpdateState(() {
+    _isConnecting = true;
+    _isProcessingBluetoothAction = true;
+    _bluetoothActionStatus = "Connecting to ${device.name}...";
+  });
+
+  try {
+    // Start timeout timer
+    _stateResetTimer = Timer(const Duration(seconds: 30), () {
+      if (_isConnecting) {
+        if (kDebugMode) {
+          print("Connection attempt timed out after 30 seconds");
+        }
+        resetConnectionState();
+      }
     });
 
-    try {
-      _stateResetTimer = Timer(const Duration(seconds: 30), () {
-        if (_isConnecting) {
-          if (kDebugMode) {
-            print("Connection attempt timed out after 30 seconds");
-          }
-          resetConnectionState();
-        }
-      });
-
-      if (device.device.isConnected) {
-        await device.device.disconnect();
-        await Future.delayed(const Duration(milliseconds: 500));
-      }
-
-      if (kDebugMode) {
-        print("Attempting to connect to ${device.name}");
-      }
-
-      await device.device.connect(autoConnect: false);
+    // Disconnect if already connected
+    if (device.device.isConnected) {
+      await device.device.disconnect();
       await Future.delayed(const Duration(milliseconds: 500));
-
-      final connectionState = device.device.connectionState.listen((
-        state,
-      ) async {
-        if (state == BluetoothConnectionState.connected) {
-          if (kDebugMode) {
-            print("Connected to ${device.name}");
-          }
-
-          isConnected = true;
-          selectedDevice = device;
-          _safeUpdateState(() {
-            _bluetoothActionStatus = "Connected to ${device.name}";
-            _isConnecting = false;
-            _isProcessingBluetoothAction = false;
-          });
-
-          await _startTemperatureMonitoring();
-        } else if (state == BluetoothConnectionState.disconnected) {
-          if (kDebugMode) {
-            print("Disconnected from ${device.name}");
-          }
-
-          isConnected = false;
-          _safeUpdateState(() {
-            _bluetoothActionStatus = "Disconnected from ${device.name}";
-            _isProcessingBluetoothAction = false;
-            _isConnecting = false;
-          });
-        }
-      });
-
-      _connectionSubscription = connectionState;
-      _stateResetTimer?.cancel();
-      _stateResetTimer = null;
-
-      return true;
-    } catch (e) {
-      if (kDebugMode) {
-        print("Error connecting to device: $e");
-      }
-      _safeUpdateState(() {
-        _bluetoothActionStatus = "Connection failed: $e";
-        _isProcessingBluetoothAction = false;
-        _isConnecting = false;
-      });
-      return false;
     }
+
+    if (kDebugMode) {
+      print("Attempting to connect to ${device.name}");
+    }
+
+    // Connect to device
+    await device.device.connect(autoConnect: false);
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    // Listen for connection state changes
+    _connectionSubscription = device.device.connectionState.listen((state) async {
+      if (state == BluetoothConnectionState.connected) {
+        if (kDebugMode) {
+          print("Connected to ${device.name}");
+        }
+
+        // Discover services before reading characteristics
+        await device.device.discoverServices();
+
+        isConnected = true;
+        selectedDevice = device;
+
+        _safeUpdateState(() {
+          _bluetoothActionStatus = "Connected to ${device.name}";
+          _isConnecting = false;
+          _isProcessingBluetoothAction = false;
+        });
+
+        await _startTemperatureMonitoring();
+      } else if (state == BluetoothConnectionState.disconnected) {
+        if (kDebugMode) {
+          print("Disconnected from ${device.name}");
+        }
+
+        isConnected = false;
+        _safeUpdateState(() {
+          _bluetoothActionStatus = "Disconnected from ${device.name}";
+          _isProcessingBluetoothAction = false;
+          _isConnecting = false;
+        });
+      }
+    });
+
+    _stateResetTimer?.cancel();
+    _stateResetTimer = null;
+
+    return true;
+  } catch (e) {
+    if (kDebugMode) {
+      print("Error connecting to device: $e");
+    }
+
+    _safeUpdateState(() {
+      _bluetoothActionStatus = "Connection failed: $e";
+      _isProcessingBluetoothAction = false;
+      _isConnecting = false;
+    });
+
+    return false;
   }
+}
+
 
   Future<void> _startTemperatureMonitoring() async {
     if (selectedDevice == null || !isConnected) {
