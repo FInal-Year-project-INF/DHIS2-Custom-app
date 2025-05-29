@@ -281,85 +281,76 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
     );
   }
 
-  Widget _buildTemperatureIndicator(String temperatureStr) {
-    final double? temperature = double.tryParse(temperatureStr);
-    final bool isHigh = temperature != null && temperature > 38.0;
+ // Widget that displays temperature with color-coded status
+Widget _buildTemperatureIndicator(String temperatureStr) {
+  // Try to convert the temperature string to a double
+  final double? temperature = double.tryParse(temperatureStr);
 
-    final Color bgColor =
-        isHigh ? Colors.red.withAlpha(25) : AppColors.primary.withAlpha(25);
-    final Color borderColor =
-        isHigh ? Colors.red.withAlpha(50) : AppColors.primary.withAlpha(50);
-    final Color textColor = isHigh ? Colors.red : AppColors.primary;
+  // Determine if the temperature is considered high (> 38.0°C)
+  final bool isHigh = temperature != null && temperature > 38.0;
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(AppDimensions.cardBorderRadius / 2),
-        border: Border.all(color: borderColor, width: 1),
+  // Define background, border, and text colors based on temperature
+  final Color bgColor = isHigh
+      ? Colors.red.withAlpha(25)
+      : AppColors.primary.withAlpha(25);
+
+  final Color borderColor = isHigh
+      ? Colors.red.withAlpha(50)
+      : AppColors.primary.withAlpha(50);
+
+  final Color textColor = isHigh ? Colors.red : AppColors.primary;
+
+  return Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: bgColor,
+      borderRadius: BorderRadius.circular(
+        AppDimensions.cardBorderRadius / 2,
       ),
-      child: Row(
-        children: [
-          Icon(Icons.thermostat_outlined, color: textColor, size: 20),
-          const SizedBox(width: 8),
-          Text(
-            'Temperature: $temperatureStr °C',
-            style: TextStyle(
-              fontWeight: FontWeight.w500,
-              color: textColor,
-              fontSize: 15,
-            ),
+      border: Border.all(color: borderColor, width: 1),
+    ),
+    child: Row(
+      children: [
+        // Thermometer icon
+        Icon(
+          Icons.thermostat_outlined,
+          color: textColor,
+          size: 20,
+        ),
+
+        const SizedBox(width: 8),
+
+        // Display temperature value
+        Text(
+          'Temperature: $temperatureStr °C',
+          style: TextStyle(
+            fontWeight: FontWeight.w500,
+            color: textColor,
+            fontSize: 15,
           ),
-          const Spacer(),
-          if (isHigh)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text(
-                'HIGH',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+        ),
 
-  Widget _buildDetailRow(String label, String value, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+        const Spacer(),
+
+        // Show "HIGH" label if temperature is elevated
+        if (isHigh)
           Container(
-            width: 32,
-            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.primary.withAlpha(25),
-              borderRadius: BorderRadius.circular(8),
+              color: Colors.red,
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: AppColors.primary, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: AppTextStyles.caption),
-                const SizedBox(height: 2),
-                Text(value, style: AppTextStyles.body),
-              ],
+            child: const Text(
+              'HIGH',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+                fontSize: 12,
+              ),
             ),
           ),
-        ],
-      ),
-    );
-  }
+      ],
+    ),
+  );
 }
+
