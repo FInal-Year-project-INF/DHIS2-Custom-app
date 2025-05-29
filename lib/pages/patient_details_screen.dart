@@ -354,3 +354,38 @@ Widget _buildTemperatureIndicator(String temperatureStr) {
   );
 }
 
+// Widget that displays a labeled detail row with an icon
+Widget _buildDetailRow(String label, String value, IconData icon) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 4.0),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Icon container
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withAlpha(25),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: AppColors.primary, size: 18),
+        ),
+
+        const SizedBox(width: 12),
+
+        // Text content: label and value
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: AppTextStyles.caption),
+              const SizedBox(height: 2),
+              Text(value, style: AppTextStyles.body),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
