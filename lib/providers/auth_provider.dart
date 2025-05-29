@@ -184,12 +184,7 @@ class AuthProvider with ChangeNotifier {
     _lastErrorMessage = ''; // Clear any previous error messages
 
     final prefs = await SharedPreferences.getInstance();
-    // More targeted removal, or clear all if that's the app's policy
-    // await prefs.remove(_prefsKeyIsLoggedIn);
-    // await prefs.remove(_prefsKeyUsername);
-    // await prefs.remove(_prefsKeyOrgUnit);
-    // await prefs.remove(_prefsKeyOrgName);
-    // await prefs.remove(_prefsKeyAuthToken);
+  
     await prefs
         .clear(); // Clears all data for the app, which is usually fine for logout
 
