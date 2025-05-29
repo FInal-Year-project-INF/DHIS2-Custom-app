@@ -582,3 +582,176 @@ class DHIS2Service {
 
   return attributes;
 }
+//Extracts TEI ID fromvarious DHIS2 responce formats
+// Extracts TEI ID from various DHIS2 response formats
+String? _extractTrackedEntityInstanceId(Map<String, dynamic> responseBody) {
+  if (responseBody['status'] == 'SUCCESS' &&
+      responseBody['response']?['reference'] != null) {
+    return responseBody['response']['reference'];
+  }
+
+  final importSummaries = responseBody['importSummaries'] ??
+      responseBody['response']?['importSummaries'];
+
+  if (importSummaries is List && importSummaries.isNotEmpty) {
+    final summary = importSummaries.first;
+
+    if (summary['reference'] != null) {
+      return summary['reference'];
+    }
+
+    if (summary['href'] != null) {
+      final Uri hrefUri = Uri.parse(summary['href']);
+      return hrefUri.pathSegments.isNotEmpty ? hrefUri.pathSegments.last : null;
+    }
+  }
+
+  return null;
+}
+
+Future<bool> registerPatient(Patient patient, String authToken) async {
+  _lastErrorMessage = '';
+  String? newTrackedEntityInstanceId;
+
+  try {
+    final attributes = _buildPatientAttributes(patient);
+    final teiPayload = {
+      'trackedEntityType': trackedEntityTypeId,
+      'orgUnit': patient.organizationUnit,
+      'attributes': attributes,
+      'enrollments': [
+        {
+          'program': programId,
+          'orgUnit': patient.organizationUnit,
+          'enrollmentDate': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+          'incidentDate': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+        },
+      ],
+    };
+
+    final teiResponse = await http
+        .post(
+          Uri.parse('$baseUrl/trackedEntityInstances?strategy=CREATE_AND_UPDATE'),
+          headers: {
+            'Authorization': authToken,
+            'Content-Type': 'application/json',
+          },
+          body: json.encode(teiPayload),
+        )
+        .timeout(const Duration(seconds: 20));
+
+    final responseBody = json.decode(teiResponse.body);
+
+    if (teiResponse.statusCode == 200 || teiResponse.statusCode == 201) {
+      if (kDebugMode) print('TEI Response body: $responseBody');
+
+      newTrackedEntityInstanceId = _extractTrackedEntityInstanceId(responseBody);
+
+      if (newTrackedEntityInstanceId == null) {
+        _lastErrorMessage = 'Patient registered, but TEI ID not found. ${teiResponse.body}';
+        return false;
+      }
+
+      if (kDebugMode) {
+        print('Patient (TEI) created. ID: $newTrackedEntityInstanceId');
+      }
+    } else {
+      _lastErrorMessage = 'Failed to register patient (TEI): ${teiResponse.statusCode}. Body: ${teiResponse.body}';
+      if (kDebugMode) print(_lastErrorMessage);
+      return false;
+    }
+  } catch (e) {
+    _lastErrorMessage = 'Error registering patient (TEI): $e';
+    if (kDebugMode) print(_lastErrorMessage);
+    return false;
+  }
+
+  try {
+    final success = await _createTemperatureEvent(
+      newTrackedEntityInstanceId,
+      patient.organizationUnit,
+      patient.temperature.toString(),
+      authToken,
+    );
+
+    if (!success) {
+      _lastErrorMessage = 'Patient registered, but failed to create temperature event';
+      if (kDebugMode) print(_lastErrorMessage);
+    }
+
+    return true;
+  } catch (e) {
+    _lastErrorMessage = 'Patient registered, but temperature event failed: $e';
+    if (kDebugMode) print(_lastErrorMessage);
+    return true;
+  }
+}
+
+Future<bool> _createTemperatureEvent(
+  String trackedEntityInstanceId,
+  String organizationUnit,
+  String temperatureValue,
+  String authToken,
+) async {
+  try {
+    final String eventDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+    if (kDebugMode) {
+      print('Creating event for TEI: $trackedEntityInstanceId');
+      print('Program ID: $programId');
+      print('Program Stage ID: $programStageIdForTemperatureEvent');
+      print('Organization Unit: $organizationUnit');
+      print('Temperature Value: $temperatureValue');
+    }
+
+    final eventPayload = {
+      'program': programId,
+      'programStage': programStageIdForTemperatureEvent,
+      'orgUnit': organizationUnit,
+      'trackedEntityInstance': trackedEntityInstanceId,
+      'eventDate': eventDate,
+      'status': 'COMPLETED',
+      'dataValues': [
+        {
+          'dataElement': dataElementIdForTemperatureInEvent,
+          'value': temperatureValue,
+        },
+      ],
+    };
+
+    final eventResponse = await http
+        .post(
+          Uri.parse('$baseUrl/events'),
+          headers: {
+            'Authorization': authToken,
+            'Content-Type': 'application/json',
+          },
+          body: json.encode(eventPayload),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (eventResponse.statusCode >= 200 && eventResponse.statusCode < 300) {
+      final responseBody = json.decode(eventResponse.body);
+      if (responseBody['status'] == 'SUCCESS' ||
+          responseBody['httpStatus'] == 'OK' ||
+          responseBody['httpStatus'] == 'Created') {
+        if (kDebugMode) {
+          print('Temperature event created for TEI ID: $trackedEntityInstanceId');
+        }
+        return true;
+      } else {
+        _lastErrorMessage = 'Event creation failed. Response: ${eventResponse.body}';
+        if (kDebugMode) print(_lastErrorMessage);
+        return false;
+      }
+    } else {
+      _lastErrorMessage = 'Event creation failed: ${eventResponse.statusCode}. Body: ${eventResponse.body}';
+      if (kDebugMode) print(_lastErrorMessage);
+      return false;
+    }
+  } catch (e) {
+    _lastErrorMessage = 'Error creating temperature event: $e';
+    if (kDebugMode) print(_lastErrorMessage);
+    return false;
+  }
+}
